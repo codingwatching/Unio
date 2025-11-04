@@ -40,6 +40,16 @@ We want to treat the deserialization result as C# memory, but the raw data befor
 
 ![](./docs/gc_bench.png)
 
+> [!NOTE]
+> Why is a native allocator better than C#'s GC for allocating large temporary memory?
+> First, Unity's C# GC is based on Boehm GC.
+> It does not have a compaction function during GC Collect.
+> This means that memory, once allocated, is not relocated.
+> Even if there are many small free spaces, they cannot be used for large memory allocations.
+> Therefore, if large memory allocations and deallocations are repeated, large free spaces will be created repeatedly. It might not be a problem if large free spaces can be reused, but in reality, memory is prone to fragmentation due to the lack of contiguous free space.
+> Native allocators Temp and TempJob have an arena.
+> Also, since the amount of usage of various sizes is overwhelmingly smaller than C#, it is advantageous to use native for memory that is not needed as C# objects.
+
 ## Table of Contents
 
 - [Installation](#installation)
