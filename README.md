@@ -41,18 +41,37 @@ We want to treat the deserialization result as C# memory, but the raw data befor
 ![](./docs/gc_bench.png)
 
 > [!NOTE]
-> Why is a native allocator better than C#'s GC for allocating large temporary memory?
-> 
-> First, Unity's C# GC is based on Boehm GC.
-> It does not have a compaction function during GC Collect.
-> This means that memory, once allocated, is not relocated.
-> Even if there are many small free spaces, they cannot be used for large memory allocations.
- > Therefore, if large memory allocations and deallocations are repeated, large free spaces will be created repeatedly. It might not be a problem if large free spaces can be reused, but in reality, memory is prone to fragmentation due to the lack of contiguous free space.
-> 
-> Native allocators Temp and TempJob have an arena.
-> Additionally, for the Persistent allocator, an algorithm that frees memory block by block is used.
-https://docs.unity3d.com/6000.1/Documentation/Manual/performance-native-allocators.html
-> Also, since the amount of usage of various sizes is overwhelmingly smaller than C#, it is advantageous to use native for memory that is not needed as C# objects.
+> **Why is a native allocator better than C#'s GC for allocating large temporary memory?**
+>
+> Unity's C# GC is based on the Boehm GC, which is a non-moving collector:
+> once an object is allocated, it is never relocated, and there is no compaction phase.
+> Adjacent free blocks can be coalesced, but free space separated by live objects
+> can never be merged into a contiguous region. So when large allocations and
+> deallocations are repeated while smaller objects keep landing in between,
+> the heap fragments and large contiguous regions become harder to find,
+> forcing the managed heap to grow instead — and the Boehm heap, once grown,
+> is rarely returned to the OS.
+>
+> (Arrays of primitive types such as `byte[]` are allocated as pointer-free
+> objects, so their contents are never scanned by the collector. However,
+> because the collector is conservative, a stray stack or register value that
+> happens to fall within a large array's address range can still keep the
+> whole array alive past its last use.)
+>
+> Unity's native allocators avoid these problems by design.
+> `Allocator.Temp` is backed by a per-thread stack (LIFO) allocator, and
+> `Allocator.TempJob` by a thread-safe linear (FIFO) allocator — in both cases,
+> memory is reclaimed in bulk by resetting or recycling whole blocks, so
+> short-lived buffers cause no fragmentation at all.
+> `Allocator.Persistent` uses a heap allocator based on the TLSF algorithm,
+> which is designed for low fragmentation, and allocations larger than half a
+> memory block bypass it entirely and go straight through the virtual memory API —
+> so a huge temporary buffer is returned to the OS as soon as it is freed,
+> rather than lingering as managed heap growth.
+> https://docs.unity3d.com/6000.1/Documentation/Manual/performance-native-allocators.html
+>
+> Since raw I/O buffers don't need to be visible to C# at all, keeping them out of
+> the managed heap avoids both GC pressure and fragmentation.
  
 
 ## Table of Contents
